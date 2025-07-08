@@ -24,6 +24,7 @@ MAX_CARS = 10
 CAR_SPAWN_INTERVAL_RANGE = (0, 2)
 FAST_LANE_SPEED = 1.0
 SLOW_LANE_SPEED = 0.5
+WARNING_TIME = 2.0  # horizon (in steps) to warn about approaching cars
 FPS = 4 # ``GridWorldEnv``  modes “rgb_array” and “human”  render at 4 FPS.
 
 # Colors
@@ -49,9 +50,9 @@ class FroggerEnv(gym.Env):
         self.action_space = spaces.Discrete(5)
 
         self.observation_space = spaces.Box(
-            low=np.array([0.0, 0.0] + [0.0, 0.0, -1.0] * MAX_CARS, dtype=np.float32), 
-            high=np.array([1.0, 1.0] + [1.0, 1.0, 1.0] * MAX_CARS, dtype=np.float32), 
-            shape=(2 + 3 * MAX_CARS,),
+            low=np.array([0.0, 0.0, 0.0] + [0.0, 0.0, -1.0] * MAX_CARS, dtype=np.float32),
+            high=np.array([1.0, 1.0, 1.0] + [1.0, 1.0, 1.0] * MAX_CARS, dtype=np.float32),
+            shape=(3 + 3 * MAX_CARS,),
             dtype=np.float32
         )
 
@@ -74,17 +75,35 @@ class FroggerEnv(gym.Env):
             speeds[m + i + 2] = (-1, speed)
         return speeds
 
+    def car_warning(self) -> float:
+        """Return 1.0 if a car is predicted to reach the frog soon."""
+        for car in self.cars:
+            if car['row'] != self.frog_pos[0]:
+                continue
+            if car['dir'] == 1:
+                distance = self.frog_pos[1] - car['col']
+            else:
+                distance = car['col'] - self.frog_pos[1]
+            if 0 <= distance <= car['speed'] * WARNING_TIME:
+                return 1.0
+        return 0.0
+
     def _get_obs(self):
-        obs = [self.frog_pos[0] / GRID_HEIGHT, self.frog_pos[1] / GRID_WIDTH]
+        warning = self.car_warning()
+        obs = [
+            self.frog_pos[0] / GRID_HEIGHT,
+            self.frog_pos[1] / GRID_WIDTH,
+            warning,
+        ]
         for car in self.cars:
             obs.extend([
                 car['row'] / GRID_HEIGHT,
                 car['col'] / GRID_WIDTH,
-                car['dir'] * car['speed'] / FAST_LANE_SPEED
+                car['dir'] * car['speed'] / FAST_LANE_SPEED,
             ])
-        while len(obs) < 2 + 3 * MAX_CARS:
+        while len(obs) < 3 + 3 * MAX_CARS:
             obs.extend([0, 0, 0])
-        return np.array(obs[:2 + 3 * MAX_CARS], dtype=np.float32)
+        return np.array(obs[:3 + 3 * MAX_CARS], dtype=np.float32)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
